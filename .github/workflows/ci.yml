@@ -1,0 +1,40 @@
+name: backend-ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: onda
+          POSTGRES_USER: onda
+          POSTGRES_PASSWORD: onda
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U onda -d onda"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ONDA_ENVIRONMENT: test
+      ONDA_DATABASE_URL: postgresql+asyncpg://onda:onda@127.0.0.1:5432/onda
+      ONDA_API_JWT_SECRET: ci-api-secret-at-least-thirty-two-characters
+      ONDA_JITSI_APP_ID: onda
+      ONDA_JITSI_APP_SECRET: ci-jitsi-secret-at-least-thirty-two-characters
+      ONDA_JITSI_BASE_URL: https://meet.example.test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked --extra dev
+      - run: uv run ruff check .
+      - run: uv run alembic upgrade head
+      - run: uv run pytest --cov=app --cov-fail-under=65

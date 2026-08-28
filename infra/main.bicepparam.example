@@ -1,0 +1,18 @@
+using './main.bicep'
+
+param location = 'polandcentral'
+param namePrefix = 'ondadev2026'
+param appServiceName = 'onda-api-omid-2026'
+param postgresAdminUser = 'ondaadmin'
+param postgresAdminPassword = '<generate-a-long-random-password>'
+param apiJwtSecret = '<generate-at-least-32-random-characters>'
+param jitsiJwtSecret = '<generate-at-least-32-random-characters>'
+param backendOutboundIps = [
+  '<app-service-outbound-ip>'
+]
+param developerIp = '<your-public-ip>'
+param sshPublicKey = 'ssh-ed25519 AAAA...'
+param sshSourceCidr = '<your-public-ip>/32'
+param letsEncryptEmail = '<your-email>'
+param jitsiReleaseTag = 'stable-11146-2'
+param jitsiVmSize = 'Standard_B2als_v2'

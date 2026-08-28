@@ -1,0 +1,78 @@
+#cloud-config
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - unzip
+
+write_files:
+  - path: /usr/local/sbin/install-onda-jitsi
+    permissions: '0700'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+      chmod a+r /etc/apt/keyrings/docker.asc
+      . /etc/os-release
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" > /etc/apt/sources.list.d/docker.list
+      apt-get update
+      apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+      curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
+      az login --identity --allow-no-subscriptions >/dev/null
+      for attempt in $(seq 1 30); do
+        if JITSI_SECRET=$(az keyvault secret show --vault-name '__KEY_VAULT_NAME__' --name onda-jitsi-jwt-secret --query value -o tsv 2>/dev/null); then
+          break
+        fi
+        sleep 10
+      done
+      test -n "${JITSI_SECRET:-}"
+
+      install -d -m 0700 /opt/jitsi
+      cd /opt/jitsi
+      release_url=https://api.github.com/repos/jitsi/docker-jitsi-meet/zipball/__JITSI_RELEASE_TAG__
+      curl -fsSL "$release_url" -o release.zip
+      unzip -q release.zip -d release
+      source_dir=$(find release -mindepth 1 -maxdepth 1 -type d | head -n 1)
+      cp -a "$source_dir"/. /opt/jitsi/
+      cp env.example .env
+      ./gen-passwords.sh
+      cat >> .env <<'JITSI_ENV'
+      CONFIG=/opt/jitsi/config
+      HTTP_PORT=80
+      HTTPS_PORT=443
+      TZ=Europe/Rome
+      PUBLIC_URL=https://__JITSI_FQDN__
+      ENABLE_LETSENCRYPT=1
+      LETSENCRYPT_DOMAIN=__JITSI_FQDN__
+      LETSENCRYPT_EMAIL=__LETSENCRYPT_EMAIL__
+      ENABLE_AUTH=1
+      ENABLE_GUESTS=0
+      AUTH_TYPE=jwt
+      JWT_APP_ID=__JITSI_APP_ID__
+      JWT_ACCEPTED_ISSUERS=__JITSI_APP_ID__
+      JWT_ACCEPTED_AUDIENCES=__JITSI_APP_ID__
+      JWT_ALLOW_EMPTY=0
+      JWT_AUTH_TYPE=token
+      JWT_TOKEN_AUTH_MODULE=token_verification
+      JWT_ENABLE_DOMAIN_VERIFICATION=1
+      XMPP_MUC_MODULES=token_affiliation_legacy,token_owner_party
+      ENABLE_AUTO_OWNER=0
+      ENABLE_MODERATOR_CHECKS=1
+      ENABLE_XMPP_WEBSOCKET=1
+      ENABLE_LOBBY=1
+      DISABLE_GRANT_MODERATOR=1
+      JITSI_ENV
+      printf '\nJWT_APP_SECRET=%s\n' "$JITSI_SECRET" >> .env
+      printf 'JVB_ADVERTISE_IPS=%s\n' '__JITSI_PUBLIC_IP__' >> .env
+
+      install -d -m 0750 /opt/jitsi/config/{web/letsencrypt,transcripts,prosody/config,prosody/prosody-plugins-custom,jicofo,jvb,jigasi,jibri}
+      chown -R 1000:1000 /opt/jitsi/config
+      docker compose up -d
+
+runcmd:
+  - [bash, -lc, '/usr/local/sbin/install-onda-jitsi > /var/log/onda-jitsi-install.log 2>&1']
